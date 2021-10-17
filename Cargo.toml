@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 arrow2 = { version = "0.6", features = ["io_parquet", "io_parquet_compression"] }
+arrow = "5"
 parquet = "5"
 
 [dev-dependencies]
@@ -16,4 +17,12 @@ harness = false
 
 [[bench]]
 name = "read_parquet_arrow"
+harness = false
+
+[[bench]]
+name = "write_parquet_arrow2"
+harness = false
+
+[[bench]]
+name = "write_parquet_arrow"
 harness = false

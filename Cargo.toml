@@ -5,8 +5,8 @@ edition = "2018"
 
 [dependencies]
 arrow2 = { version = "0.6", features = ["io_parquet", "io_parquet_compression"] }
-arrow = "5"
-parquet = "5"
+arrow = "6"
+parquet = "6"
 
 [dev-dependencies]
 criterion = "0.3"

@@ -27,7 +27,8 @@ def _run_write_arrow():
 
 
 # run pyarrow
-# subprocess.call(["python", "bench.py"])
-# _run_arrow()
-# _run_read_arrow2()
+subprocess.call(["python", "bench.py"])
+_run_read_arrow2()
+_run_write_arrow2()
+_run_read_arrow()
 _run_write_arrow()

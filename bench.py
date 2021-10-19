@@ -36,7 +36,9 @@ def _bench_read_single(
     data = io.BytesIO(data)
 
     def f():
-        pyarrow.parquet.read_table(data, columns=[column])
+        table = pyarrow.parquet.read_table(data, columns=[column])
+        # without validation, utf8 results in UB.
+        table.validate(full=True)
 
     seconds = timeit.Timer(f).timeit(number=100) / 100
     ns = seconds * 1000 * 1000 * 1000

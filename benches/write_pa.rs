@@ -1,14 +1,17 @@
+use arrow2::array::*;
+use arrow2::chunk::Chunk;
+use arrow2::datatypes::Field;
+use arrow2::datatypes::Schema;
+use arrow2::error::Result;
+use arrow2::io::parquet::write::*;
+use criterion::*;
+use pa::write;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use criterion::*;
-
-use arrow::array::*;
-use arrow::record_batch::RecordBatch;
-use parquet::basic::Compression;
-use parquet::file::properties::WriterProperties;
-use parquet::{arrow::ArrowWriter, errors::Result, file::writer::InMemoryWriteableCursor};
-
-fn create_batch(size: usize, ty: &str) -> RecordBatch {
+fn create_array(size: usize, ty: &str) -> Box<dyn Array> {
     let i64 = [
         Some(0),
         Some(1),
@@ -49,38 +52,33 @@ fn create_batch(size: usize, ty: &str) -> RecordBatch {
                 .cloned()
                 .cycle()
                 .take(size)
-                .collect::<StringArray>(),
+                .collect::<Utf8Array<i32>>(),
         ) as Arc<dyn Array>,
         "bool" => {
             Arc::new(bool.iter().cycle().take(size).collect::<BooleanArray>()) as Arc<dyn Array>
         }
         _ => todo!(),
     };
-    assert_eq!(array.len(), size);
-    RecordBatch::try_from_iter([("test", array)]).unwrap()
+    array.to_boxed()
 }
 
-fn write(batch: RecordBatch, is_compressed: bool) -> Result<()> {
-    let cursor = InMemoryWriteableCursor::default();
+fn write_chunk(path: &PathBuf, array: &Box<dyn Array>) -> Result<()> {
+    let file = File::create(path)?;
+    let chunk = Chunk::new(vec![array.to_boxed()]);
+    let filed = Field::new("column", array.data_type().clone(), true);
+    let schema = Schema::from(vec![filed]);
 
-    let compression = if is_compressed {
-        Compression::SNAPPY
-    } else {
-        Compression::UNCOMPRESSED
+    let options = write::WriteOptions {
+        compression: None,
+        max_page_size: Some(8192),
     };
+    let mut writer = write::PaWriter::new(file, schema, options);
 
-    let options = WriterProperties::builder()
-        .set_write_batch_size(batch.num_rows())
-        .set_compression(compression)
-        .build();
-
-    let mut writer = ArrowWriter::try_new(cursor, batch.schema(), Some(options))?;
-
-    writer.write(&batch)?;
-    writer.close()?;
+    writer.start()?;
+    writer.write(&chunk)?;
+    writer.finish()?;
     Ok(())
 }
-
 fn add_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("write");
 
@@ -88,17 +86,21 @@ fn add_benchmark(c: &mut Criterion) {
         let size = 2usize.pow(log2_size);
         group.throughput(Throughput::Elements(size as u64));
         for ty in ["i64", "utf8", "bool"] {
-            let batch = create_batch(size, ty);
-
+            let array = create_array(size, ty);
             for is_compressed in [true, false] {
                 let id = if is_compressed {
                     format!("{} snappy", ty)
                 } else {
                     ty.to_string()
                 };
+                let dir = env!("CARGO_MANIFEST_DIR");
+                let path = PathBuf::from(dir).join(format!(
+                    "fixtures/pyarrow/v1{}benches_{}.pa",
+                    is_compressed, size
+                ));
 
-                group.bench_with_input(BenchmarkId::new(id, log2_size), &batch, |b, batch| {
-                    b.iter(|| write(batch.clone(), is_compressed).unwrap())
+                group.bench_with_input(BenchmarkId::new(id, log2_size), &path, |b, path| {
+                    b.iter(|| write_chunk(&path, &array).unwrap())
                 });
             }
         }

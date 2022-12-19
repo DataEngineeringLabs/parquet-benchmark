@@ -8,7 +8,7 @@ def _read_reports(engine: str):
     root = {
         "arrow2": "target/criterion/arrow2/",
         "pyarrow": "benchmarks/runs",
-        "arrow": "target/criterion/arrow/",
+        "pa": "target/criterion/pa/",
     }[engine]
 
     result = []
@@ -55,7 +55,7 @@ def print_csv_report():
             "Time",
         ]
     )
-    for engine in ["arrow2", "pyarrow", "arrow"]:
+    for engine in ["arrow2", "pyarrow", "pa"]:
         result = _read_reports(engine)
 
         for row in result:

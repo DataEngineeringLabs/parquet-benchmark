@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-arrow2 = { git = "https://github.com/doki23/arrow2", default-features = false, features = [
+arrow2 = { git = "https://github.com/jorgecarleitao/arrow2", rev = "1b190fc", default-features = false, features = [
     "io_parquet",
     "compute",
     "io_parquet_compression",
     "io_ipc",
 ] }
-pa = { git = "https://github.com/sundy-li/pa", branch = "main" }
+pa = { git = "https://github.com/sundy-li/pa", rev = "4b98e51" }
 arrow = "29.0.0"
 parquet = "29.0.0"
 

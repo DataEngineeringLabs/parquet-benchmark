@@ -11,7 +11,7 @@ use criterion::Throughput;
 use criterion::*;
 use pa::read::deserialize;
 use pa::read::reader::{infer_schema, read_meta, PaReader};
-use pa::{read, write, ColumnMeta};
+use pa::{read, write, ColumnMeta, Compression};
 use std::path::PathBuf;
 
 fn to_path(size: usize, dict: bool, multi_page: bool, compressed: bool) -> PathBuf {
@@ -65,7 +65,7 @@ fn write_pa(parquet_path: &PathBuf, pa_path: &PathBuf) -> Result<()> {
     );
     let file = File::create(pa_path)?;
     let options = write::WriteOptions {
-        compression: Some(write::Compression::LZ4),
+        compression: Compression::LZ4,
         max_page_size: Some(8192),
     };
     let mut writer = write::PaWriter::new(file, schema, options);
@@ -84,24 +84,21 @@ fn read_batch(path: &PathBuf, size: usize, column: usize) -> Result<()> {
     // and infer a [`Schema`] from the `metadata`.
     let schema = infer_schema(&mut reader).unwrap();
 
-    let metas: Vec<ColumnMeta> = read_meta(&mut reader)?;
+    let metas: Vec<ColumnMeta> = read_meta(&mut reader).expect("read error");
 
     let mut readers = vec![];
     for (meta, field) in metas.iter().zip(schema.fields.iter()) {
         let mut reader = File::open(path).unwrap();
         reader.seek(std::io::SeekFrom::Start(meta.offset)).unwrap();
-        let reader = reader.take(meta.length);
 
-        let buffer_size = meta.length.min(8192) as usize;
+        let buffer_size = meta.total_len().min(8192) as usize;
         let reader = BufReader::with_capacity(buffer_size, reader);
         let scratch = Vec::with_capacity(8 * 1024);
 
         let pa_reader = PaReader::new(
             reader,
             field.data_type().clone(),
-            true,
-            Some(read::Compression::LZ4),
-            meta.num_values as usize,
+            meta.pages.clone(),
             scratch,
         );
         readers.push(pa_reader);
@@ -116,7 +113,7 @@ fn read_batch(path: &PathBuf, size: usize, column: usize) -> Result<()> {
             chunks.push(reader.next_array().unwrap());
         }
 
-        let chunk = Chunk::new(chunks);
+        let _ = Chunk::new(chunks);
     }
     Ok(())
 }

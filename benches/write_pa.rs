@@ -5,7 +5,7 @@ use arrow2::datatypes::Schema;
 use arrow2::error::Result;
 use arrow2::io::parquet::write::*;
 use criterion::*;
-use pa::write;
+use pa::{Compression, write};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -69,7 +69,7 @@ fn write_chunk(path: &PathBuf, array: &Box<dyn Array>) -> Result<()> {
     let schema = Schema::from(vec![filed]);
 
     let options = write::WriteOptions {
-        compression: None,
+        compression: Compression::None,
         max_page_size: Some(8192),
     };
     let mut writer = write::PaWriter::new(file, schema, options);

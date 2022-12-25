@@ -6,7 +6,6 @@ use arrow2::error::Result;
 use arrow2::io::parquet::write::*;
 use criterion::*;
 use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -61,15 +60,19 @@ fn create_array(size: usize, ty: &str) -> Box<dyn Array> {
     array.to_boxed()
 }
 
-fn write_chunk(path: &PathBuf, array: &Box<dyn Array>) -> Result<()> {
+fn write_chunk(path: &PathBuf, array: &Box<dyn Array>, is_compressed: bool) -> Result<()> {
     let file = File::create(path)?;
     let chunk = Chunk::new(vec![array.to_boxed()]);
     let filed = Field::new("column", array.data_type().clone(), true);
     let schema = Schema::from(vec![filed]);
-
+    let compression = if is_compressed {
+        CompressionOptions::Snappy
+    } else {
+        CompressionOptions::Uncompressed
+    };
     let options = WriteOptions {
         write_statistics: true,
-        compression: CompressionOptions::Uncompressed,
+        compression: compression,
         version: Version::V2,
         data_pagesize_limit: None,
     };
@@ -113,7 +116,7 @@ fn add_benchmark(c: &mut Criterion) {
                 ));
 
                 group.bench_with_input(BenchmarkId::new(id, log2_size), &path, |b, path| {
-                    b.iter(|| write_chunk(&path, &array).unwrap())
+                    b.iter(|| write_chunk(&path, &array, is_compressed).unwrap())
                 });
             }
         }

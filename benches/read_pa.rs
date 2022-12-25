@@ -1,60 +1,43 @@
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, Write};
-use std::time::Instant;
+use std::io::{BufReader, Seek};
+use std::path::PathBuf;
+use std::vec;
 
-use arrow2::array::Array;
 use arrow2::chunk::Chunk;
-use arrow2::datatypes::Schema;
 use arrow2::error::Result;
 use criterion::BenchmarkId;
 use criterion::Throughput;
 use criterion::*;
-use pa::read::deserialize;
 use pa::read::reader::{infer_schema, read_meta, PaReader};
-use pa::{read, write, ColumnMeta, Compression};
-use std::path::PathBuf;
+use pa::{write, ColumnMeta, Compression};
 
 fn to_path(size: usize, dict: bool, multi_page: bool, compressed: bool) -> PathBuf {
     let dir = env!("CARGO_MANIFEST_DIR");
 
     let dict = if dict { "dict/" } else { "" };
     let multi_page = if multi_page { "multi/" } else { "" };
-    let compressed = if compressed { "snappy/" } else { "" };
+    let compressed_str = if compressed { "snappy/" } else { "" };
 
     let path = PathBuf::from(dir).join(format!(
         "fixtures/pyarrow/v1/{}{}{}benches_{}.parquet",
-        dict, multi_page, compressed, size
+        dict, multi_page, compressed_str, size
     ));
 
     let pa_path = PathBuf::from(dir).join(format!(
         "fixtures/pyarrow/v1/{}{}{}benches_{}.pa",
-        dict, multi_page, compressed, size
+        dict, multi_page, compressed_str, size
     ));
     // write pa file to test
-    write_pa(&path, &pa_path);
+    write_pa(&path, &pa_path, compressed);
     pa_path
 }
 
-fn write_pa(parquet_path: &PathBuf, pa_path: &PathBuf) -> Result<()> {
+fn write_pa(parquet_path: &PathBuf, pa_path: &PathBuf, compressed: bool) -> Result<()> {
     let mut reader = File::open(parquet_path).unwrap();
-
-    // we can read its metadata:
     let metadata = arrow2::io::parquet::read::read_metadata(&mut reader).unwrap();
-    // and infer a [`Schema`] from the `metadata`.
     let schema = arrow2::io::parquet::read::infer_schema(&metadata).unwrap();
-    // we can filter the columns we need (here we select all)
     let schema = schema.filter(|_index, _field| true);
-
-    // say we found that we only need to read the first two row groups, "0" and "1"
-    let row_groups = metadata
-        .row_groups
-        .into_iter()
-        .enumerate()
-        .filter(|(index, _)| *index == 0 || *index == 1)
-        .map(|(_, row_group)| row_group)
-        .collect();
-
-    // we can then read the row groups into chunks
+    let row_groups = metadata.row_groups;
     let chunks = arrow2::io::parquet::read::FileReader::new(
         reader,
         row_groups,
@@ -64,9 +47,14 @@ fn write_pa(parquet_path: &PathBuf, pa_path: &PathBuf) -> Result<()> {
         None,
     );
     let file = File::create(pa_path)?;
+    let compression = if compressed {
+        Compression::SNAPPY
+    } else {
+        Compression::None
+    };
     let options = write::WriteOptions {
-        compression: Compression::LZ4,
-        max_page_size: Some(8192),
+        compression: compression,
+        max_page_size: Some(8 * 1024),
     };
     let mut writer = write::PaWriter::new(file, schema, options);
     writer.start().unwrap();
@@ -80,12 +68,15 @@ fn write_pa(parquet_path: &PathBuf, pa_path: &PathBuf) -> Result<()> {
 
 fn read_batch(path: &PathBuf, size: usize, column: usize) -> Result<()> {
     let mut reader = File::open(path).unwrap();
-    // we can read its metadata:
-    // and infer a [`Schema`] from the `metadata`.
     let schema = infer_schema(&mut reader).unwrap();
-
-    let metas: Vec<ColumnMeta> = read_meta(&mut reader).expect("read error");
-
+    let schema = schema.filter(|index, _field| index == column);
+    let metas: Vec<ColumnMeta> = read_meta(&mut reader)
+        .expect("read error")
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| *index == column)
+        .map(|(_, meta)| meta)
+        .collect();
     let mut readers = vec![];
     for (meta, field) in metas.iter().zip(schema.fields.iter()) {
         let mut reader = File::open(path).unwrap();
@@ -138,6 +129,26 @@ fn add_benchmark(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("bool", log2_size), &path, |b, path| {
             b.iter(|| read_batch(&path, size, 3).unwrap())
         });
+
+        let path = to_path(size, false, false, true);
+
+        group.bench_with_input(
+            BenchmarkId::new("i64 snappy", log2_size),
+            &path,
+            |b, path| b.iter(|| read_batch(&path, size, 0).unwrap()),
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("utf8 snappy", log2_size),
+            &path,
+            |b, path| b.iter(|| read_batch(&path, size, 2).unwrap()),
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("bool snappy", log2_size),
+            &path,
+            |b, path| b.iter(|| read_batch(&path, size, 3).unwrap()),
+        );
     }
 }
 

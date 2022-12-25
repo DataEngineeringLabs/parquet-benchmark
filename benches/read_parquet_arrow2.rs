@@ -1,13 +1,9 @@
 use std::fs::File;
-use std::io::Read;
-use std::{fs, io::Cursor, path::PathBuf};
-
-use arrow2::datatypes::Schema;
-use arrow2::io::parquet::write::FileMetaData;
-use criterion::*;
+use std::path::PathBuf;
 
 use arrow2::error::Result;
 use arrow2::io::parquet::read;
+use criterion::*;
 
 fn to_path(size: usize, dict: bool, multi_page: bool, compressed: bool) -> PathBuf {
     let dir = env!("CARGO_MANIFEST_DIR");
@@ -26,24 +22,10 @@ fn to_path(size: usize, dict: bool, multi_page: bool, compressed: bool) -> PathB
 
 fn read_batch(path: &PathBuf, size: usize, column: usize) -> Result<()> {
     let mut reader = Box::new(File::open(path)?);
-
-    // we can read its metadata:
     let metadata = read::read_metadata(&mut reader)?;
-
-    // and infer a [`Schema`] from the `metadata`.
     let schema = read::infer_schema(&metadata)?;
-
-    // we can filter the columns we need (here we select all)
-    let schema = schema.filter(|_index, _field| true);
-
-    // say we found that we only need to read the first two row groups, "0" and "1"
-    let row_groups = metadata
-        .row_groups
-        .into_iter()
-        .enumerate()
-        .filter(|(index, _)| *index == 0 || *index == 1)
-        .map(|(_, row_group)| row_group)
-        .collect();
+    let schema = schema.filter(|index, _field| index == column);
+    let row_groups = metadata.row_groups;
 
     // we can then read the row groups into chunks
     let chunks = read::FileReader::new(reader, row_groups, schema, Some(size), None, None);
@@ -76,6 +58,26 @@ fn add_benchmark(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("bool", log2_size), &path, |b, path| {
             b.iter(|| read_batch(&path, size, 3).unwrap())
         });
+
+        let path = to_path(size, false, false, true);
+
+        group.bench_with_input(
+            BenchmarkId::new("i64 snappy", log2_size),
+            &path,
+            |b, path| b.iter(|| read_batch(&path, size, 0).unwrap()),
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("utf8 snappy", log2_size),
+            &path,
+            |b, path| b.iter(|| read_batch(&path, size, 2).unwrap()),
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("bool snappy", log2_size),
+            &path,
+            |b, path| b.iter(|| read_batch(&path, size, 3).unwrap()),
+        );
     }
 }
 

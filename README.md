@@ -56,6 +56,7 @@ To reproduce, use
 python3 -m venv venv
 venv/bin/pip install -U pip
 venv/bin/pip install pyarrow
+venv/bin/pip install seaborn
 
 # create files
 venv/bin/python write_parquet.py
@@ -66,6 +67,7 @@ venv/bin/python run.py
 # print results to stdout as csv
 venv/bin/python summarize.py
 ```
+Eventually, you will see summary information in the target directory
 
 ## Details
 

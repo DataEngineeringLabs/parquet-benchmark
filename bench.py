@@ -100,14 +100,15 @@ CASES = {
     "bool snappy": ("bool", False, False, False),
     "utf8": ("string", False, False, False),
     "utf8 snappy": ("string", False, False, True),
-    "utf8 dict": ("string", True, False, False),
+    # "utf8 dict": ("string", True, False, False),
 }
 
 
 def _bench_read(size, case):
     column, use_dict, multiple_pages, is_compressed = CASES[case]
 
-    result = _bench_read_single(size, column, use_dict, multiple_pages, is_compressed)
+    result = _bench_read_single(
+        size, column, use_dict, multiple_pages, is_compressed)
     print(result)
     _report(f"read/{case}/{size}", result)
 
